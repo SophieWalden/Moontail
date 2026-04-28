@@ -77,8 +77,8 @@ export class Game extends Scene {
         this.gatheringBusy = new Set();
 
         this.gatheringItems = {
-            86: 'rat',
-            87: 'snake',
+            386: 'rat',
+            387: 'snake',
         };
 
          this.ignoreNextGroundClick = false;
@@ -223,7 +223,7 @@ export class Game extends Scene {
             const tile = this.layer.getTileAtWorldXY(pointer.worldX, pointer.worldY);
 
             if (tile){
-                this.moveToTileSimple(tile.x, tile.y, tile.index == 80 || tile.index == 81)
+                this.moveToTileSimple(tile.x, tile.y, tile.index == 352 || tile.index == 353)
             }
         })
 

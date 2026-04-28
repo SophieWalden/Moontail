@@ -204,6 +204,12 @@ export class UIScene extends Phaser.Scene {
         const panelX = WIDTH - 150;
         const panelY = HEIGHT - 245;
 
+        this.inventoryTitle = this.add.text(WIDTH - 200, HEIGHT - 430, 'Inventory', {
+            fontFamily: 'monospace',
+            fontSize: '22px',
+            color: '#b08f8f'
+        });
+
         const totalWidth = this.inventoryCols * this.inventorySlotSize + (this.inventoryCols - 1) * this.inventorySlotGapX;
         const totalHeight = this.inventoryRows * this.inventorySlotSize + (this.inventoryRows - 1) * this.inventorySlotGapY;
 
@@ -270,6 +276,8 @@ export class UIScene extends Phaser.Scene {
         for (const slot of this.inventorySlots) {
             slot.item.setVisible(isVisible && slot.hasItem);
         }
+
+        this.inventoryTitle?.setVisible(isVisible)
     }
 
     xpToLevel(xp) {
