@@ -40,8 +40,11 @@ export class UIScene extends Phaser.Scene {
         this.inventorySlotGapY = 8;
         this.skills = { huntingXp: 0, religionXp: 0 };
         this.skillTexts = {};
+        this.skillIcons = []
         this.xpDropBaseY = 80;
         this.xpDropCount = 0;
+        this.selectedTabTint = 0xcc9999;
+        this.hoverTabTint = 0xeeeeee;
     }
 
     init(data) {
@@ -53,13 +56,16 @@ export class UIScene extends Phaser.Scene {
         this.myChatRef = ref(db, `chat/${this.player_chat_key}`);
         this.chatRef = ref(db, 'chat');
         set(this.myChatRef, `${this.player_name} has joined the game`);
-        this.add.rectangle(WIDTH - 150, HEIGHT - 32, 300, 65, 0x808080 >> 1);
-        this.inventory_button = this.add.rectangle(WIDTH - 35, HEIGHT - 32, 50, 50, 0x808080);
-        this.inventoryText = this.add.text(WIDTH - 42, HEIGHT - 50, 'I', {fontFamily: 'monospace', fontSize: '32px', color: '#000000'});
-        this.skills_button = this.add.rectangle(WIDTH - 90, HEIGHT - 32, 50, 50, 0x808080);
-        this.skillsText = this.add.text(WIDTH - 97, HEIGHT - 50, 'S', {fontFamily: 'monospace', fontSize: '32px', color: '#000000'});
+        this.inventory_button = this.add.image(WIDTH - 45, HEIGHT - 45, 'ui_tab_button').setScale(0.33)
+        this.skills_button = this.add.image(WIDTH - 130, HEIGHT - 45, 'ui_tab_button').setScale(0.33)
+        this.inventory_icon = this.add.image(WIDTH - 45, HEIGHT - 45, "inventory_icon").setScale(0.33)
+        this.skills_icon = this.add.image(WIDTH - 130, HEIGHT - 45, "skills_icon").setScale(0.33)
 
-        this.tab = this.add.rectangle(WIDTH - 150, HEIGHT - 225, 275, 300, 0x808080);
+
+        this.add_tab_button_visual_flair(this.inventory_button);
+        this.add_tab_button_visual_flair(this.skills_button);
+
+        this.tab = this.add.image(WIDTH - 150, HEIGHT - 270, 'menu_tab').setScale(0.33)
         this.tab.setVisible(false);
 
 
@@ -196,7 +202,7 @@ export class UIScene extends Phaser.Scene {
 
     createInventoryUI() {
         const panelX = WIDTH - 150;
-        const panelY = HEIGHT - 225;
+        const panelY = HEIGHT - 245;
 
         const totalWidth = this.inventoryCols * this.inventorySlotSize + (this.inventoryCols - 1) * this.inventorySlotGapX;
         const totalHeight = this.inventoryRows * this.inventorySlotSize + (this.inventoryRows - 1) * this.inventorySlotGapY;
@@ -209,14 +215,11 @@ export class UIScene extends Phaser.Scene {
                 const x = startX + col * (this.inventorySlotSize + this.inventorySlotGapX) + this.inventorySlotSize / 2;
                 const y = startY + row * (this.inventorySlotSize + this.inventorySlotGapY) + this.inventorySlotSize / 2;
 
-                const bg = this.add.rectangle(x, y, this.inventorySlotSize, this.inventorySlotSize, 0x808080, 0.75)
-                    .setStrokeStyle(2, 0x808080, 0.15);
-
                 const item = this.add.image(x, y, 'rat');
                 item.setDisplaySize(this.inventorySlotSize - 4, this.inventorySlotSize - 4);
                 item.setVisible(false);
 
-                this.inventorySlots.push({ bg, item, hasItem: false });
+                this.inventorySlots.push({ item, hasItem: false });
             }
         }
     }
@@ -247,23 +250,24 @@ export class UIScene extends Phaser.Scene {
     }
 
     refreshSkills(skills) {
-        if (!this.skillTexts.hunting || !this.skillTexts.religion) return;
+        if (!this.skillUi.length) return;
 
         this.skills = {
             huntingXp: Number(skills?.huntingXp ?? 0),
             religionXp: Number(skills?.religionXp ?? 0)
         };
 
-        const hLvl = this.xpToLevel(this.skills.huntingXp);
-        const rLvl = this.xpToLevel(this.skills.religionXp);
+        this.skillUi.forEach((skill) => {
+            const xp = Number(this.skills[`${skill.key}Xp`] ?? 0);
+            const lvl = this.xpToLevel(xp);
 
-        this.skillTexts.hunting.setText(`Hunting   Lv ${hLvl}  (${this.skills.huntingXp} xp)`);
-        this.skillTexts.religion.setText(`Religion  Lv ${rLvl}  (${this.skills.religionXp} xp)`);
+            this.skillTexts[skill.key]?.setText(`${lvl}`);
+            this.skillTexts[`${skill.key}HoverDisplay`]?.setText(`${skill.label} Lvl ${lvl} (${xp} xp)`);
+        });
     }
 
     setInventoryVisible(isVisible) {
         for (const slot of this.inventorySlots) {
-            slot.bg.setVisible(isVisible);
             slot.item.setVisible(isVisible && slot.hasItem);
         }
     }
@@ -287,36 +291,88 @@ export class UIScene extends Phaser.Scene {
 
     createSkillsUI() {
         const x = WIDTH - 265;
-        const y = HEIGHT - 345;
+        const y = HEIGHT - 425;
 
-        this.skillTexts.title = this.add.text(x, y, 'Skills', {
+        this.skillTexts.title = this.add.text(x + 80, y - 5, 'Skills', {
             fontFamily: 'monospace',
             fontSize: '22px',
-            color: '#ffffff'
+            color: '#b08f8f'
         });
 
-        this.skillTexts.hunting = this.add.text(x, y + 40, '', {
-            fontFamily: 'monospace',
-            fontSize: '18px',
-            color: '#ffffff'
-        });
+        const skillDefinitions = [
+            {
+                key: 'hunting',
+                label: 'Hunting',
+                icon: 'hunting_icon'
+            },
+            {
+                key: 'religion',
+                label: 'Religion',
+                icon: 'religion_icon'
+            }
+        ];
 
-        this.skillTexts.religion = this.add.text(x, y + 75, '', {
-            fontFamily: 'monospace',
-            fontSize: '18px',
-            color: '#ffffff'
+        this.skillUi = [];
+        this.skillIcons = [];
+
+        const cols = 3;
+        const startX = x + 28;
+        const startY = y + 50;
+        const colGap = 74;
+        const rowGap = 80;
+
+        skillDefinitions.forEach((skill, index) => {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+
+            const cellX = startX + col * colGap;
+            const cellY = startY + row * rowGap;
+
+            const hoverDisplay = this.add.text(x - 340, y + 30 + row * 40, '', {
+                fontSize: '24px',
+                color: '#ffffff',
+                backgroundColor: '#320b32',
+                padding: { x: 8, y: 6 }
+            });
+            hoverDisplay.setVisible(false);
+            hoverDisplay.setDepth(100);
+
+            const rect = this.add.rectangle(cellX, cellY + 4, 66, 66);
+            rect.setInteractive({ useHandCursor: true });
+            rect.on('pointerover', () => hoverDisplay.setVisible(true));
+            rect.on('pointerout', () => hoverDisplay.setVisible(false));
+
+            const icon = this.add.image(cellX, cellY, skill.icon).setScale(0.2);
+            const text = this.add.text(cellX, cellY + 24, '1', {
+                fontFamily: 'monospace',
+                fontSize: '24px',
+                color: '#b08f8f'
+            }).setOrigin(0.5, 0);
+
+            this.skillIcons.push(icon);
+            this.skillUi.push(skill);
+            this.skillTexts[skill.key] = text;
+            this.skillTexts[`${skill.key}Rect`] = rect;
+            this.skillTexts[`${skill.key}HoverDisplay`] = hoverDisplay;
         });
 
         this.refreshSkills(this.skills);
     }
 
-
-
     setSkillsVisible(isVisible) {
         this.skillTexts.title?.setVisible(isVisible);
-        this.skillTexts.hunting?.setVisible(isVisible);
-        this.skillTexts.religion?.setVisible(isVisible);
+
+        this.skillUi.forEach((skill) => {
+            this.skillTexts[skill.key]?.setVisible(isVisible);
+            this.skillTexts[`${skill.key}Rect`]?.setVisible(isVisible);
+            this.skillTexts[`${skill.key}HoverDisplay`]?.setVisible(false);
+        });
+
+        this.skillIcons.forEach((icon) => {
+            icon.setVisible(isVisible);
+        });
     }
+
 
     setTab(newTab) {
         if (this.visible_tab == newTab) this.visible_tab = "none";
@@ -325,6 +381,19 @@ export class UIScene extends Phaser.Scene {
         this.setInventoryVisible(this.visible_tab === 'inventory');
         this.setSkillsVisible(this.visible_tab === 'skills');
         this.tab.setVisible(this.visible_tab !== 'none');
+
+        this.updateTabButtonTints();
+    }
+
+    updateTabButtonTints() {
+        const inventorySelected = this.visible_tab === 'inventory';
+        const skillsSelected = this.visible_tab === 'skills';
+
+        if (inventorySelected) this.inventory_button.setTint(this.selectedTabTint);
+        else this.inventory_button.clearTint();
+
+        if (skillsSelected) this.skills_button.setTint(this.selectedTabTint);
+        else this.skills_button.clearTint();
     }
 
     showXpDrop(skillName, amount, beforeLevel, afterLevel) {
@@ -432,5 +501,21 @@ export class UIScene extends Phaser.Scene {
     addChat(newChat){
         this.chatHistory.push(newChat)
         this.refreshChatHistory();
+    }
+
+    add_tab_button_visual_flair(button){
+        button.on('pointerover', () => {
+            const isSelected =
+                (button === this.inventory_button && this.visible_tab === 'inventory') ||
+                (button === this.skills_button && this.visible_tab === 'skills');
+
+            if (!isSelected) {
+                button.setTint(this.hoverTabTint);
+            }
+        });
+
+        button.on('pointerout', () => {
+            this.updateTabButtonTints();
+        });
     }
 }

@@ -54,7 +54,7 @@ export class Game extends Scene {
         this.playerId = null;
         this.playerRef = null;
         this.playersRef = null;
-        this.player_name = 'player';
+        this.player_name = Math.random().toString(36).substring(2, 7);
         this.player_color = 'geji';
 
         this.otherPlayers = new Map();
@@ -101,7 +101,7 @@ export class Game extends Scene {
         const incomingName = String(data?.playerName ?? '').trim();
         const incomingColor = String(data?.playerColor ?? '').trim();
 
-        this.player_name = incomingName || this.player_name || 'player';
+        this.player_name = incomingName || this.player_name || Math.random().toString(36).substring(2, 7);
 
         const allowedSkins = new Set(['brown', 'grey', 'geji']);
         if (allowedSkins.has(incomingColor)) {

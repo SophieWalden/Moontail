@@ -51,10 +51,20 @@ export class Preloader extends Scene
         // Items
         this.load.image("rat", "rat.png")
         this.load.image("snake", "snake.png")
+
+        // UI
+        this.load.image('ui_tab_button', 'tab_button_frame.png');
+        this.load.image('inventory_icon', 'inventory_icon.png');
+        this.load.image('skills_icon', 'skills_icon.png')
+        this.load.image('menu_tab', 'menu_tab.png')
+        this.load.image('hunting_icon', 'hunting_icon.png')
+        this.load.image('religion_icon', 'religion_icon.png')
     }
 
     create ()
     {
-        this.scene.start('MainMenu');
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+        this.scene.start(isLocalhost ? 'Game' : 'MainMenu');
     }
 }
