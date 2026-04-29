@@ -26,22 +26,79 @@ function clampToBoard(scene, x, y) {
     };
 }
 
-function buildStraightLPath(start, goal) {
-    const path = [];
-    let x = start.x;
-    let y = start.y;
+function heuristic(start, goal, point){
+    let g = Math.abs(start[0] - point[0]) + Math.abs(start[1] - point[1]);
+    let h = Math.abs(goal[0] - point[0]) + Math.abs(goal[1] - point[1]);
 
-    while (x !== goal.x) {
-        x += goal.x > x ? 1 : -1;
-        path.push({ x, y });
+    return g + h;
+}
+
+function buildPath(start, goal, scene) {
+    const board = scene.board;
+    const decorationBoard = scene.decorations_board
+    const forbiddenTiles = [37, 36, 38, 5, 4, 6, 69, 68, 70, 39, 40, 41, 7, 8, 9, 71, 72, 73, 103, 104, 105];
+    const height = board?.length ?? 0;
+    const width = height > 0 ? board[0].length : 0;
+    if (width === 0 || height === 0) return [];
+
+    const heuristic = (p, g) => Math.abs(g.x - p.x) + Math.abs(g.y - p.y);
+
+    const startNode = {
+        x: start.x,
+        y: start.y,
+        g: 0,
+        f: heuristic(start, goal),
+        path: []
+    };
+
+    const open = [startNode];
+    const closed = new Set([`${start.x},${start.y}`]);
+
+    const dirs = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1]
+    ];
+
+    while (open.length > 0) {
+        let minIdx = 0;
+        for (let i = 1; i < open.length; i++) {
+            if (open[i].f < open[minIdx].f) minIdx = i;
+        }
+        const current = open.splice(minIdx, 1)[0];
+
+        if (current.x === goal.x && current.y === goal.y) return current.path;
+
+        for (const [dx, dy] of dirs) {
+            const nx = current.x + dx;
+            const ny = current.y + dy;
+            const key = `${nx},${ny}`;
+
+            if (nx < 0 || nx >= width) continue;
+            if (ny < 0 || ny >= height) continue;
+            if (closed.has(key)) continue;
+
+            const tile = board[ny][nx];
+            const decoTile = decorationBoard[ny][nx]
+            if (forbiddenTiles.includes(tile) || forbiddenTiles.includes(decoTile)) continue;
+
+            const g = current.g + 1;
+            const f = g + heuristic({ x: nx, y: ny }, goal);
+
+            open.push({
+                x: nx,
+                y: ny,
+                g,
+                f,
+                path: [...current.path, { x: nx, y: ny }]
+            });
+
+            closed.add(key);
+        }
     }
 
-    while (y !== goal.y) {
-        y += goal.y > y ? 1 : -1;
-        path.push({ x, y });
-    }
-
-    return path;
+    return [];
 }
 
 function getDirectionFromStep(dx, dy) {
@@ -82,13 +139,13 @@ export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete) {
 
     if (start.x === goal.x && start.y === goal.y) return;
 
-    const path = buildStraightLPath(start, goal);
+    const path = buildPath(start, goal, scene);
     if (!path.length) return;
 
     scene.isStepping = true;
 
     const stepNext = (index) => {
-        if (myToken !== scene.moveToken) return; 
+        if (myToken !== scene.moveToken) return;
 
         if (index >= path.length) {
             scene.isStepping = false;
@@ -110,6 +167,22 @@ export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete) {
         setPlayerFacing(scene, dx, dy);
         const world = toWorldCenter(p.x, p.y);
 
+        scene.moveSeq = (scene.moveSeq ?? 0) + 1;
+
+        if (scene.playerRef) {
+            update(scene.playerRef, {
+                x: world.x,
+                y: world.y,
+                tileX: p.x,
+                tileY: p.y,
+                color: scene.player_color,
+                direction: getDirectionFromStep(dx, dy),
+                moving: true,
+                moveSeq: scene.moveSeq,
+                movedAt: Date.now()
+            });
+        }
+
         scene.currentMoveTween = scene.tweens.add({
             targets: scene.player,
             x: world.x,
@@ -118,16 +191,6 @@ export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete) {
             ease: 'Linear',
             onComplete: () => {
                 if (myToken !== scene.moveToken) return;
-
-                if (scene.playerRef) {
-                    update(scene.playerRef, {
-                        x: scene.player.x,
-                        y: scene.player.y,
-                        color: scene.player_color,
-                        direction: getDirectionFromStep(dx, dy)
-                    });
-                }
-
                 stepNext(index + 1);
             }
         });

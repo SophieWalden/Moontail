@@ -11,8 +11,13 @@ export const TILE_SIZE = 48;
 export const WARP_TILES = {
     "clan_19_22": ["hunting_grounds", 20, 1],
     "clan_20_22": ["hunting_grounds", 21, 1],
+    "clan_0_11": ["field", 28, 15],
+    "clan_0_12": ["field", 28, 15],
     "hunting_grounds_20_0": ["clan", 20, 21],
-    "hunting_grounds_21_0": ["clan", 21, 21]
+    "hunting_grounds_21_0": ["clan", 21, 21],
+    "field_29_14": ["clan", 1, 10],
+    "field_29_15": ["clan", 1, 11]
+
 }
 
 export const DIALOGUE = {

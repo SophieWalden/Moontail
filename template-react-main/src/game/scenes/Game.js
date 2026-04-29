@@ -11,7 +11,8 @@ import {
     onChildAdded,
     onChildChanged,
     onChildRemoved,
-    onValue
+    onValue,
+    get
 } from 'firebase/database';
 import * as backgroundSystems from "./systems/background"
 import * as movementSystem from "./systems/movement"
@@ -79,6 +80,11 @@ export class Game extends Scene {
         this.gatheringItems = {
             386: 'rat',
             387: 'snake',
+            17: 'marigold',
+            18: 'borage', 
+            19: 'tansy',
+            20: 'garlic',
+            21: 'snakeroot'
         };
 
          this.ignoreNextGroundClick = false;
@@ -95,6 +101,7 @@ export class Game extends Scene {
             rat: 15,
             snake: 40
         };
+
     }
 
     init(data) {
@@ -130,9 +137,10 @@ export class Game extends Scene {
         this.player.y = Math.round(this.player.y / TILE_SIZE) * TILE_SIZE;
 
         const cam = this.cameras.main;
-        const bounds = this.layer.getBounds(); 
-        cam.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+        this.resetBounds();
         cam.startFollow(this.player, true, 1, 1); 
+        this.cameras.main.filters.internal.addVignette(0.5, 0.5, 0.70, 0.02);
+
 
 
         this.playerId = hashNameToId(this.player_name);
@@ -145,6 +153,7 @@ export class Game extends Scene {
         this.playersRef = ref(db, 'players');
         this.inventoryRef = ref(db, `inventories/${this.playerId}`);
         this.skillsRef = ref(db, `skills/${this.playerId}`);
+        this.gatheringRef = ref(db, 'gathering')
 
         this.unsubscribeInventory = onValue(this.inventoryRef, (snap) => {
             const data = snap.val();
@@ -194,6 +203,28 @@ export class Game extends Scene {
             this.removeOtherSprite(id);
         });
 
+        this.unsubscribeGathering = onChildChanged(this.gatheringRef, (snapshot) => {
+            if (this.player_screen != 'field') return;
+            const data = snapshot.val();
+
+            Object.keys(data).forEach((key) => {
+                let item = data[key];
+                if (item.respawnAt > Date.now()){
+                    this.setGatheringTile(item.pos.x, item.pos.y, 15);
+
+                    if (item.respawnAt - Date.now() < 100){
+                        this.setGatheringTile(item.pos.x, item.pos.y, item.tileType);
+                        this.gatheringBusy.delete(key)
+                    }else{
+                        this.time.delayedCall(item.respawnAt - Date.now(), () => {
+                            this.setGatheringTile(item.pos.x, item.pos.y, item.tileType);
+                            this.gatheringBusy.delete(key)
+                        });
+                    }
+                }
+            })
+        })
+
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
             if (this.unsubscribeAdded) this.unsubscribeAdded();
@@ -201,6 +232,7 @@ export class Game extends Scene {
             if (this.unsubscribeRemoved) this.unsubscribeRemoved();
             if (this.unsubscribeSkills) this.unsubscribeSkills();
             if (this.unsubscribeInventory) this.unsubscribeInventory();
+            if (this.unsubscribeGathering) this.unsubscribeGathering();
 
             if (this.playerRef) remove(this.playerRef);
 
@@ -223,7 +255,7 @@ export class Game extends Scene {
             const tile = this.layer.getTileAtWorldXY(pointer.worldX, pointer.worldY);
 
             if (tile){
-                this.moveToTileSimple(tile.x, tile.y, tile.index == 352 || tile.index == 353)
+                this.moveToTileSimple(tile.x, tile.y, tile.index >= 352 && tile.index <= 355)
             }
         })
 
@@ -282,6 +314,12 @@ export class Game extends Scene {
         this.uiScene?.showXpDrop(skillName, amount, beforeLevel, afterLevel);
     }
 
+    resetBounds(){
+        const cam = this.cameras.main;
+        const bounds = this.layer.getBounds(); 
+        cam.setBounds(bounds.x, bounds.y, Math.max(bounds.width, 1920), bounds.height);
+    }
+
 
     shouldShowOther(data) {
         return !!data && data.screen === this.player_screen;
@@ -336,7 +374,6 @@ export class Game extends Scene {
     warp(x, y) {
         const warpKey = `${this.player_screen}_${x}_${y}`;
         const warpTile = WARP_TILES[warpKey];
-
         if (!warpTile) {
             console.log(`[DEV]: Setup warp tile for ${warpKey}`);
             return;
@@ -354,8 +391,7 @@ export class Game extends Scene {
         }
 
         const cam = this.cameras.main;
-        const bounds = this.layer.getBounds();
-        cam.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+        this.resetBounds();
         cam.startFollow(this.player, true, 1, 1);
 
          if (this.playerRef) {
@@ -373,6 +409,50 @@ export class Game extends Scene {
         }
 
         this.setup_npcs(this.player_screen)
+        this.setupGathering(nextScreen);
+    }
+
+    generate_new_herbs(){
+        return Math.floor(Math.random() * 5) + 17;
+    }
+
+    async setupGathering(screen){
+        if (screen != 'field') return;
+        let gathering_locations = [[13, 3], [26, 2], [3, 7], [19, 8], [8, 11]];
+
+        const screenGatheringRef = ref(db, `gathering/${screen}`);
+        const snap = await get(screenGatheringRef);
+
+        if (!snap.exists()) {
+            const seed = {};
+
+            for (const [x, y] of gathering_locations) {
+                seed[`${x}_${y}`] = {
+                    pos: { x, y },
+                    tileType: this.generate_new_herbs(),
+                    respawnAt: 0
+                };
+
+                this.setGatheringTile(x, y, seed[`${x}_${y}`].tileType)
+            }
+
+            await set(screenGatheringRef, seed);
+        } else {
+            const data = snap.val();
+
+            Object.keys(data).forEach((key) => {
+                let item = data[key];
+
+                if (Date.now() > item.respawnAt){
+                    this.setGatheringTile(item.pos.x, item.pos.y, item.tileType)
+                }else{
+                    this.time.delayedCall(item.respawnAt - Date.now(), () => {
+                        this.setGatheringTile(item.pos.x, item.pos.y, item.tileType);
+                    });
+                }
+                
+            })
+        }
     }
 
     getPlayerTilePos() {
@@ -504,7 +584,7 @@ export class Game extends Scene {
 
 
     harvestGatheringTile(tileX, tileY, tileIndex) {
-        const key = `${tileX},${tileY}`;
+        const key = `${tileX}_${tileY}`;
         if (this.gatheringBusy.has(key)) return;
 
         const item = this.gatheringItems[tileIndex];
@@ -517,6 +597,7 @@ export class Game extends Scene {
 
         const screen = this.player_screen;
         const approach = this.getGatherApproachTile(tileX, tileY);
+        const gatheringTileRef = ref(db, `gathering/${screen}/${tileX}_${tileY}`);
 
         this.gatheringBusy.add(key);
 
@@ -533,11 +614,19 @@ export class Game extends Scene {
 
                 this.setGatheringTile(tileX, tileY, 15);
 
-                this.time.delayedCall(this.gatheringRespawnMs, () => {
-                    if (this.player_screen !== screen) return;
-                    this.setGatheringTile(tileX, tileY, tileIndex);
-                    this.gatheringBusy.delete(key);
-                });
+                if (tileIndex <= 16 || tileIndex >= 22){
+                    this.time.delayedCall(this.gatheringRespawnMs, () => {
+                        if (this.player_screen !== screen) return;
+                        this.setGatheringTile(tileX, tileY, tileIndex);
+                        this.gatheringBusy.delete(key);
+                    });
+                }else{
+                    update(gatheringTileRef, {
+                        tileType: this.generate_new_herbs(),
+                        respawnAt: Date.now() + this.gatheringRespawnMs
+                    })
+                }
+                
             });
         });
     }
