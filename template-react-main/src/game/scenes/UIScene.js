@@ -247,7 +247,6 @@ export class UIScene extends Phaser.Scene {
 
 
     addChatBubble(playerId, text) {
-        console.log('addChatBubble called', { playerId, text });
         try {
             // write to a single figgy key (no timestamp) so onChildChanged fires on updates
             const key = String(playerId || '').toLowerCase().includes('figgy') ? 'figgy' : playerId;
@@ -258,7 +257,6 @@ export class UIScene extends Phaser.Scene {
     }
 
     showChatBubble(playerId, rawMessage, duration = 3000) {
-        console.log('showChatBubble called', { playerId, rawMessage });
         if (!rawMessage) return;
         const body = rawMessage.includes(': ') ? rawMessage.split(': ').slice(1).join(': ').trim() : rawMessage.trim();
         if (!body) return;
@@ -266,14 +264,11 @@ export class UIScene extends Phaser.Scene {
         let pid = playerId;
         if (String(pid || '').toLowerCase().includes('figgy')) pid = 'figgy';
 
-        console.log('showing bubble for', { pid, body });
 
         const gameScene = this.scene.get('Game');
         if (gameScene && typeof gameScene.showSpeech === 'function') {
-            console.log('using Game.showSpeech');
             gameScene.showSpeech(pid, body, duration);
         } else {
-            console.log('using UIScene fallback bubble');
             const x = this.cameras.main.width / 2;
             const y = 100;
             const txt = this.add.text(x, y, body, { fontFamily: 'monospace', fontSize: '20px', color: '#FFFF66', stroke: '#000000', strokeThickness: 4 }).setOrigin(0.5).setScrollFactor(0).setDepth(2000);
@@ -530,10 +525,8 @@ export class UIScene extends Phaser.Scene {
     medical_game_popup() { this.setMedicalVisible(true); }
 
 
-    // Trivia
     attemptStartTrivia(){
         if (this.triviaActive) return;
-        // claim trivia in db (simple lock)
         try {
             set(this.triviaRef, { owner: this.player_chat_key, startedAt: Date.now() });
         } catch (err) {
@@ -542,7 +535,6 @@ export class UIScene extends Phaser.Scene {
         this.triviaOwner = this.player_chat_key;
         this.triviaActive = true;
 
-        // build per-category pools
         const categories = Object.keys(QUESTIONS || {}).filter(c => {
             const cat = QUESTIONS[c];
             return cat && Object.keys(cat).length > 0;
@@ -554,7 +546,6 @@ export class UIScene extends Phaser.Scene {
             return;
         }
 
-        // helper: shuffle array in-place
         const shuffle = (arr) => {
             for (let i = arr.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -563,11 +554,10 @@ export class UIScene extends Phaser.Scene {
             return arr;
         };
 
-        // helper: generate hint with progressive reveal
         const generateHint = (answer) => {
             if (!this._triviaHintIndices) this._triviaHintIndices = new Set();
             const chars = answer.split('');
-            const maxReveal = Math.max(1, Math.floor(chars.length * 0.8)); // don't reveal entire word
+            const maxReveal = Math.max(1, Math.floor(chars.length * 0.8)); 
             const newReveals = Math.min(2, maxReveal - this._triviaHintIndices.size);
             
             for (let i = 0; i < newReveals && this._triviaHintIndices.size < maxReveal; i++) {
@@ -581,7 +571,6 @@ export class UIScene extends Phaser.Scene {
             return chars.map((c, i) => this._triviaHintIndices.has(i) ? c : '_').join('');
         };
 
-        // helper: pick random category and 3 questions from it
         const pickRandomCategory = () => {
             const cat = categories[Math.floor(Math.random() * categories.length)];
             const pool = Object.keys(QUESTIONS[cat] || {}).map(q => ({ q: String(q), a: String(QUESTIONS[cat][q]) }));
@@ -591,7 +580,6 @@ export class UIScene extends Phaser.Scene {
             return { category: cat, questions: pool.slice(0, take) };
         };
 
-        // indices for walking the current category
         this._triviaQuestionIndex = 0;
         this.currentTriviaAnswer = null;
         this._triviaQuestionTimeouts = [];
@@ -616,7 +604,6 @@ export class UIScene extends Phaser.Scene {
             clearQuestionTimeouts();
             if (!this.triviaActive) return;
 
-            // check if we need a new category
             if (!this._triviaCurrentCategory || this._triviaQuestionIndex >= this._triviaCurrentCategory.questions.length) {
                 this._triviaCurrentCategory = pickRandomCategory();
                 if (!this._triviaCurrentCategory) {
@@ -635,7 +622,6 @@ export class UIScene extends Phaser.Scene {
             
             this.addChatBubble('figgy', `${qobj.q}`);
 
-            // 30 second timer with hints at 8s, 16s, 24s
             this._triviaHintIndices = new Set();
             
             const hintTimes = [8000, 16000, 24000];
@@ -661,30 +647,26 @@ export class UIScene extends Phaser.Scene {
             this._triviaQuestionTimeouts.push(t);
         };
 
-        // listen for chat answers while this client owns trivia
         this.triviaChatUnsub = onChildChanged(this.chatRef, (snapshot) => {
             if (!this.triviaActive) return;
             const key = snapshot.key;
             const raw = String(snapshot.val() ?? '').trim();
             if (!raw) return;
-            // ignore figgy's own lines
             if (String(key || '').toLowerCase().includes('figgy')) return;
             const body = raw.includes(': ') ? raw.split(': ').slice(1).join(': ').trim() : raw;
+            const name = raw.includes(': ') ? raw.split(': ').slice(0, 1).join(': ').trim() : raw;
             if (!body) return;
             if (!this.currentTriviaAnswer) return;
             if (body.toLowerCase() === this.currentTriviaAnswer) {
                 clearQuestionTimeouts();
                 const winner = key;
-                this.addChatBubble('figgy', `${winner} got it right`);
-                // advance to next question in current category
+                this.addChatBubble('figgy', `${name} got it right`);
                 this._triviaQuestionIndex += 1;
-                // small delay before next question
                 const t = setTimeout(askCurrentQuestion, 2000);
                 this._triviaQuestionTimeouts.push(t);
             }
         });
 
-        // start asking
         this.addChatBubble('figgy', `Starting trivia!`);
         const t = setTimeout(askCurrentQuestion, 2500);
         this._triviaQuestionTimeouts.push(t);

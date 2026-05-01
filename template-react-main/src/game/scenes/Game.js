@@ -69,7 +69,7 @@ export class Game extends Scene {
         this.unsubscribeRemoved = null;
         this.direction_facing = "east";
         this.player_color = "geji";
-        this.player_screen = "clan";
+        this.player_screen = "freaks";
         this.moveToken = 0;
         this.currentMoveTween = null;
         this.npcs = []
