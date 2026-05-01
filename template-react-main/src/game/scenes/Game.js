@@ -12,11 +12,12 @@ import {
     onChildChanged,
     onChildRemoved,
     onValue,
-    get
+    get,
+    runTransaction
 } from 'firebase/database';
 import * as backgroundSystems from "./systems/background"
 import * as movementSystem from "./systems/movement"
-import {TILE_SIZE, WARP_TILES, NPCs, DIALOGUE} from "./systems/constants"
+import {TILE_SIZE, WARP_TILES, NPCs, DIALOGUE, QUESTIONS, TRIVIA} from "./systems/constants"
 
 function getBrightColor() {
     const r = Phaser.Math.Between(120, 255);
@@ -76,6 +77,8 @@ export class Game extends Scene {
         this.gatheringRespawnMs = 5000;
         this.gatheringHarvestMs = 500;
         this.gatheringBusy = new Set();
+        this.hoveredGatheringKey = null;
+        this.gatherTooltipText = null;
 
         this.gatheringItems = {
             386: 'rat',
@@ -84,23 +87,48 @@ export class Game extends Scene {
             18: 'borage', 
             19: 'tansy',
             20: 'garlic',
-            21: 'snakeroot'
+            21: 'snakeroot',
+            263: 'box'
         };
+        this.gatheringLanguage = {
+            'rat': 'hunt',
+            'snake': 'hunt',
+            'marigold': 'harvest',
+            'borage': 'harvest',
+            'tansy': 'harvest',
+            'garlic': 'harvest',
+            'snakeroot': 'harvest',
+            'box': 'sleep in'
+        }
 
          this.ignoreNextGroundClick = false;
 
         this.skills = {
             huntingXp: 0,
-            religionXp: 0
+            religionXp: 0,
+            harvestingXp: 0,
+            cookingXp: 0
         };
 
         this.skillsRef = null;
         this.unsubscribeSkills = null;
 
-        this.huntingXpByItem = {
-            rat: 15,
-            snake: 40
+        this.xpByItem = {
+            rat: {skill: 'hunting', amount: 15},
+            snake: {skill: 'hunting', amount: 40},
+            marigold: {skill: 'harvesting', amount: 10},
+            borage: {skill: 'harvesting', amount: 20},
+            tansy: {skill: 'harvesting', amount: 30},
+            garlic: {skill: 'harvesting', amount: 40},
+            snakeroot: {skill: 'harvesting', amount: 100}
         };
+
+         this.triviaRef = null;
+        this.unsubscribeTrivia = null;
+        this.currentTrivia = null;
+        this._chatBubbles = new Map();
+        this.figgy = null;
+
 
     }
 
@@ -110,7 +138,7 @@ export class Game extends Scene {
 
         this.player_name = incomingName || this.player_name || Math.random().toString(36).substring(2, 7);
 
-        const allowedSkins = new Set(['brown', 'grey', 'geji']);
+        const allowedSkins = new Set(['brown', 'grey', 'geji', 'luna', 'rat']);
         if (allowedSkins.has(incomingColor)) {
             this.player_color = incomingColor;
         }
@@ -138,10 +166,7 @@ export class Game extends Scene {
 
         const cam = this.cameras.main;
         this.resetBounds();
-        cam.startFollow(this.player, true, 1, 1); 
         this.cameras.main.filters.internal.addVignette(0.5, 0.5, 0.70, 0.02);
-
-
 
         this.playerId = hashNameToId(this.player_name);
         this.scene.launch('UIScene', {
@@ -154,6 +179,11 @@ export class Game extends Scene {
         this.inventoryRef = ref(db, `inventories/${this.playerId}`);
         this.skillsRef = ref(db, `skills/${this.playerId}`);
         this.gatheringRef = ref(db, 'gathering')
+
+        this.triviaRef = ref(db, TRIVIA.dbPath);
+        this.unsubscribeTrivia = onValue(this.triviaRef, (snap) => {
+            this.currentTrivia = snap.val() || null;
+        });
 
         this.unsubscribeInventory = onValue(this.inventoryRef, (snap) => {
             const data = snap.val();
@@ -233,6 +263,7 @@ export class Game extends Scene {
             if (this.unsubscribeSkills) this.unsubscribeSkills();
             if (this.unsubscribeInventory) this.unsubscribeInventory();
             if (this.unsubscribeGathering) this.unsubscribeGathering();
+            if (this.unsubscribeTrivia) this.unsubscribeTrivia();
 
             if (this.playerRef) remove(this.playerRef);
 
@@ -259,12 +290,18 @@ export class Game extends Scene {
             }
         })
 
+        this.input.on('pointermove', (pointer) => {
+            this.updateGatherHover(pointer);
+        })
+
         this.unsubscribeSkills = onValue(this.skillsRef, (snap) => {
             const data = snap.val();
             if (data && typeof data === 'object') {
                 this.skills = {
                     huntingXp: Number(data.huntingXp ?? 0),
-                    religionXp: Number(data.religionXp ?? 0)
+                    religionXp: Number(data.religionXp ?? 0),
+                    harvestingXp: Number(data.harvestingXp ?? 0),
+                    cookingXp: Number(data.cookingXp ?? 0)
                 };
                 this.uiScene?.refreshSkills(this.skills);
             } else {
@@ -276,20 +313,19 @@ export class Game extends Scene {
     }
 
     xpToLevel(xp) {
-        const totalXp = Math.max(0, Number(xp) || 0);
+        const totalXp = Math.max(0, Math.floor(Number(xp) || 0));
 
-        let level = 1;
-        let nextThreshold = 9;  
-        let increment = 9;
-        const growth = 1.33;
+        let points = 0;
+        for (let level = 1; level < 99; level++) {
+            points += Math.floor(level + 300 * Math.pow(2, level / 7));
+            const xpForNextLevel = Math.floor(points / 4);
 
-        while (totalXp >= nextThreshold && level < 99) {
-            level += 1;
-            increment = Math.max(1, Math.round(increment * growth));
-            nextThreshold += increment;
+            if (totalXp < xpForNextLevel) {
+                return level;
+            }
         }
 
-        return level;
+        return 99;
     }
 
     getSkillLevel(skillName) {
@@ -314,12 +350,43 @@ export class Game extends Scene {
         this.uiScene?.showXpDrop(skillName, amount, beforeLevel, afterLevel);
     }
 
-    resetBounds(){
+    resetBounds() {
         const cam = this.cameras.main;
-        const bounds = this.layer.getBounds(); 
-        cam.setBounds(bounds.x, bounds.y, Math.max(bounds.width, 1920), bounds.height);
+        cam.stopFollow();
+        cam.removeBounds();
+        this.updateCameraPosition();
     }
 
+    updateCameraPosition() {
+        const cam = this.cameras.main;
+        if (!this.player || !this.layer) return;
+
+        const bounds = this.layer.getBounds();
+        const mapW = bounds.width;
+        const mapH = bounds.height;
+
+        const screenW = cam.width;
+        const screenH = cam.height;
+
+        const halfW = screenW / 2;
+        const halfH = screenH / 2;
+
+        if (mapW <= screenW) {
+            cam.scrollX = bounds.x - (screenW - mapW) / 2;
+        } else {
+            const minX = bounds.x;
+            const maxX = bounds.right - screenW;
+            cam.scrollX = Phaser.Math.Clamp(this.player.x - halfW, minX, maxX);
+        }
+
+        if (mapH <= screenH) {
+            cam.scrollY = bounds.y - (screenH - mapH) / 2;
+        } else {
+            const minY = bounds.y;
+            const maxY = bounds.bottom - screenH;
+            cam.scrollY = Phaser.Math.Clamp(this.player.y - halfH, minY, maxY);
+        }
+    }
 
     shouldShowOther(data) {
         return !!data && data.screen === this.player_screen;
@@ -392,7 +459,6 @@ export class Game extends Scene {
 
         const cam = this.cameras.main;
         this.resetBounds();
-        cam.startFollow(this.player, true, 1, 1);
 
          if (this.playerRef) {
             update(this.playerRef, {
@@ -413,7 +479,13 @@ export class Game extends Scene {
     }
 
     generate_new_herbs(){
-        return Math.floor(Math.random() * 5) + 17;
+        let random_value = Math.random();
+        if (random_value < 0.01) return 21;
+        if (random_value < 0.1) return 20;
+        if (random_value < 0.3) return 19;
+        if (random_value < 0.6) return 18;
+        
+        return 17;
     }
 
     async setupGathering(screen){
@@ -469,6 +541,14 @@ export class Game extends Scene {
         const playerTile = this.getPlayerTilePos();
         const expectedScreen = this.player_screen;
 
+        if (npc_name == "medical_minigame_start" || npc_name == "arcade_cabinet"){
+            this.uiScene.medical_game_popup();
+            return;
+        }
+
+
+        
+
         const openDialogue = () => {
             if (this.player_screen !== expectedScreen) return;
 
@@ -481,6 +561,15 @@ export class Game extends Scene {
                         ? `You offer ${offered.rats} rat(s) and ${offered.snakes} snake(s) to the fresh-kill pile. Starclan smiles down upon you`
                         : 'You have no rats or snakes to offer.';
                 lines = [summary];
+            }
+            
+            if (npc_name === 'herb_box'){
+                const offered = this.offerHerbs();
+                const summary = 
+                    offered.total > 0
+                        ? `You offer ${offered.total} herbs to the herbs box. Fernsong seems pleased`
+                        : `You have no herbs to offer`;
+                lines = [summary]
             }
 
             this.uiScene?.showDialogue(npc_name, lines);
@@ -499,6 +588,7 @@ export class Game extends Scene {
             npc.destroy();
         });
         this.npcs = [];
+        this.figgy = null;
 
         if (!Object.keys(NPCs).includes(screen)){
             console.log(`[DEV]: Need to setup NPCs for ${screen}`);
@@ -510,9 +600,20 @@ export class Game extends Scene {
         Object.keys(npcs_for_this_screen).forEach((npc_name) => {
             let spawn_position = npcs_for_this_screen[npc_name];
 
-            let npc = this.add.image(spawn_position[0] * TILE_SIZE, spawn_position[1] * TILE_SIZE, npc_name).setScale(0.33);
+            let npc = this.add.image(spawn_position[0] * TILE_SIZE, spawn_position[1] * TILE_SIZE, npc_name).setScale(0.33 * spawn_position[3]);
             npc.flipX = spawn_position[2];
             this.npcs.push(npc);
+
+            if (npc_name === 'figgy') {
+                npc.setInteractive({ useHandCursor: true });
+                npc.on('pointerdown', (pointer, localX, localY, event) => {
+                    event?.stopPropagation();
+                    this.ignoreNextGroundClick = true;
+                    this.uiScene.attemptStartTrivia();
+                });
+
+                this.figgy = npc; 
+            }
 
             if (Object.keys(DIALOGUE).includes(npc_name)) {
                 npc.setInteractive({ useHandCursor: true });
@@ -544,7 +645,26 @@ export class Game extends Scene {
         }
 
         return true;
+    }
+
+    generateTriviaQuestions(category) {
+        const bucket = QUESTIONS[category] || {};
+        const keys = Object.keys(bucket);
+        if (!keys.length) return [];
+
+        const out = [];
+        for (let i = 0; i < TRIVIA.questionsCount; i++) {
+            const qKey = keys[Math.floor(Math.random() * keys.length)];
+            out.push({
+                text: qKey,
+                answer: bucket[qKey],
+                claimedBy: null,
+                claimedAt: null,
+                claimerName: null
+            });
         }
+        return out;
+    }
 
 
     setGatheringTile(x, y, tileIndex) {
@@ -562,24 +682,36 @@ export class Game extends Scene {
         this.gatheringLayer.putTileAt(tileIndex, x, y);
     }
 
-    getGatherApproachTile(tileX, tileY) {
-        const playerX = Math.floor(this.player.x / TILE_SIZE);
-        const playerY = Math.floor(this.player.y / TILE_SIZE);
-
-        const dx = tileX - playerX;
-        const dy = tileY - playerY;
-
-        if (Math.abs(dx) <= Math.abs(dy)) {
-            return {
-                x: tileX - Math.sign(dx || 1),
-                y: tileY
-            };
-        }
-
+    getPlayerTilePos() {
+        const layer = this.layer; 
         return {
-            x: tileX,
-            y: tileY - Math.sign(dy || 1)
+            x: layer.worldToTileX(this.player.x),
+            y: layer.worldToTileY(this.player.y)
         };
+    }
+
+    getGatherApproachTile(tileX, tileY) {
+        const playerTile = this.getPlayerTilePos();
+
+        const candidates = [
+            { x: tileX - 1, y: tileY },
+            { x: tileX + 1, y: tileY }, 
+            { x: tileX, y: tileY - 1 },
+            { x: tileX, y: tileY + 1 } 
+        ];
+
+        const walkable = candidates.filter(({ x, y }) => {
+            const tile = this.layer?.getTileAt(x, y);
+            return !!tile && tile.index !== -1;
+        });
+
+        const list = walkable.length ? walkable : candidates;
+
+        return list.reduce((best, cur) => {
+            const bestDist = Phaser.Math.Distance.Squared(playerTile.x, playerTile.y, best.x, best.y);
+            const curDist = Phaser.Math.Distance.Squared(playerTile.x, playerTile.y, cur.x, cur.y);
+            return curDist < bestDist ? cur : best;
+        });
     }
 
 
@@ -590,8 +722,8 @@ export class Game extends Scene {
         const item = this.gatheringItems[tileIndex];
         if (!item) return;
 
-        if (item === 'snake' && this.getSkillLevel('hunting') < 10) {
-            this.uiScene.addChat('[Hunting] Need level 10 to hunt snakes');
+        if (item === 'snake' && this.getSkillLevel('hunting') < 5) {
+            this.uiScene.addChat('[Hunting] Need level 5 to hunt snakes');
             return;
         }
 
@@ -603,14 +735,20 @@ export class Game extends Scene {
 
         this.moveToTileSimple(approach.x, approach.y, false, () => {
             this.time.delayedCall(this.gatheringHarvestMs, () => {
+
+                if (item == 'box'){
+                    this.warp(0, 0);
+                    return;
+                }
+
                 const added = this.addItemToInventory(item);
                 if (!added) {
                     this.gatheringBusy.delete(key);
                     return;
                 }
 
-                const gain = this.huntingXpByItem[item] ?? 0;
-                this.addSkillXp('hunting', gain);
+                const xpGain = this.xpByItem[item];
+                this.addSkillXp(xpGain.skill, xpGain.amount);
 
                 this.setGatheringTile(tileX, tileY, 15);
 
@@ -631,10 +769,34 @@ export class Game extends Scene {
         });
     }
 
+    updateGatherHover(pointer){
+        const tile = this.gatheringLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
+        const item = tile ? this.gatheringItems[tile.index] : null
+
+        if (!tile || tile.index === 15 || !item){
+            if (this.hoveredGatheringKey !== null){
+                this.hoveredGatheringKey = null;
+                this.input.setDefaultCursor('default');
+                this.uiScene.gatheringText?.setVisible(false);
+            }
+            return;
+        }
+
+        this.hoveredGatheringKey = `${tile.x}_${tile.y}`;
+        this.input.setDefaultCursor('pointer');
+        this.uiScene.gatheringText?.setText(`${this.gatheringLanguage[item]} ${item}`);
+        this.uiScene.gatheringText?.setVisible(true);
+        this.uiScene.gatheringText.setPosition(pointer.x + 16, pointer.y - 12)
+    }
+
 
     syncInventoryUIAndDB() {
         this.uiScene?.refreshInventory(this.inventory);
         if (this.inventoryRef) set(this.inventoryRef, this.inventory);
+    }
+
+    remove_item_at_index(index){
+        this.inventory[index] = { item: 'empty' }
     }
 
     offerFreshKill() {
@@ -644,11 +806,11 @@ export class Game extends Scene {
         for (let i = 0; i < this.inventory.length; i++) {
             const item = this.inventory[i]?.item;
             if (item === 'rat') {
-                this.inventory[i] = { item: 'empty' };
-                rats += 1;
+                this.remove_item_at_index(i);
+                rats++;
             } else if (item === 'snake') {
-                this.inventory[i] = { item: 'empty' };
-                snakes += 1;
+                this.remove_item_at_index(i);
+                snakes++;
             }
         }
 
@@ -661,8 +823,87 @@ export class Game extends Scene {
         return { rats, snakes, total };
     }
 
-    update() {
+    offerHerbs(){
+        const herbs = ["marigold", "borage", "tansy", "garlic", "snakeroot"]
+        let total = 0;
 
+        for (let i = 0; i < this.inventory.length; i++){
+            const item = this.inventory[i]?.item;
+            if (herbs.includes(item)){
+                total++;
+                this.remove_item_at_index(i)
+            }
+        }
+
+        if (total != 0) this.addSkillXp('harvesting', total * 10);
+        this.syncInventoryUIAndDB()
+        return { total }
+    }
+
+    showSpeech(playerId, text, duration = 6000) {
+        if (!text) return;
+        try {
+            let x, y;
+            x = this.cameras.main.worldView.x + this.cameras.main.width / 2;
+            y = this.cameras.main.worldView.y + 100;
+
+            if (playerId === this.player_chat_key || playerId === this.playerId) {
+                if (this.player && typeof this.player.x === 'number') {
+                    x = this.player.x;
+                    y = this.player.y;
+                }
+            }
+
+            if (this.otherPlayers && this.otherPlayers.has(playerId)) {
+                const obj = this.otherPlayers.get(playerId);
+                if (obj) {
+                    const sprite = obj.sprite || obj;
+                    if (sprite && typeof sprite.x === 'number') {
+                        x = sprite.x;
+                        y = sprite.y;
+                    }
+                }
+            }
+
+            if ((playerId || '').toLowerCase().startsWith('figgy')) {
+                if (this.figgy && typeof this.figgy.x === 'number') {
+                    x = this.figgy.x;
+                    y = this.figgy.y;
+                } else if (this.npcs && this.npcs?.figgy && typeof this.npcs.figgy.x === 'number') {
+                    x = this.npcs.figgy.x;
+                    y = this.npcs.figgy.y;
+                }
+            }
+
+            const key = `${playerId}:${Date.now()}`;
+            const bubble = this.add.text(x, y - 40, text, {
+                fontFamily: 'monospace',
+                fontSize: '20px',
+                color: '#FFFF66',
+                stroke: '#000000',
+                strokeThickness: 4
+            }).setOrigin(0.5).setDepth(2000);
+
+            this._chatBubbles.set(key, bubble);
+
+            this.tweens.add({
+                targets: bubble,
+                y: bubble.y - 24,
+                alpha: 0,
+                duration,
+                ease: 'Quad.Out',
+                onComplete: () => {
+                    bubble.destroy();
+                    this._chatBubbles.delete(key);
+                }
+            });
+        } catch (err) {
+            console.error('showSpeech failed', err);
+        }
+    }
+
+    update() {
+        this.updateCameraPosition();
     }
 }
 

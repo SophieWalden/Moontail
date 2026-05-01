@@ -1,3 +1,4 @@
 {
-    "omlet.rootPath": "template-react-main"
+    "omlet.rootPath": "template-react-main",
+    "github.copilot.chat.agent.autoFix": true
 }

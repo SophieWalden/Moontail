@@ -4,6 +4,7 @@ import * as Phaser from 'phaser';
 import { Preloader } from './scenes/Preloader';
 import { UIScene } from './scenes/UIScene';
 import { MainMenu } from './scenes/systems/MainMenu';
+import { MedicalMinigame } from './scenes/MedicalMinigame';
 
 const config = {
     type: Phaser.AUTO,
@@ -14,16 +15,11 @@ const config = {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    physics: {
-        default: 'arcade',
-        arcade: {
-            gravity: { y: 0 }, 
-            debug: true
-        }
-    },
+
     render: {
         pixelArt: true, 
-        antialias: false
+        antialias: true,
+        roundPixels: true
     },
     parent: 'game-container',
     scene: [
@@ -31,7 +27,8 @@ const config = {
         Preloader,
         Game,
         UIScene,
-        MainMenu
+        MainMenu,
+        MedicalMinigame
     ]
 };
 

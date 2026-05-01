@@ -10,7 +10,7 @@ export class MainMenu extends Scene {
         this.playerName = '';
         this.nameFocused = false;
 
-        this.skins = ['brown', 'grey', 'geji'];
+        this.skins = ['brown', 'grey', 'geji', 'luna', 'rat'];
         this.selectedSkinIndex = 0;
     }
 
