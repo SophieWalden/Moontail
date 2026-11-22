@@ -17,6 +17,7 @@ import {
 } from 'firebase/database';
 import * as backgroundSystems from "./systems/background"
 import * as movementSystem from "./systems/movement"
+import * as networkingSystem from "./systems/networking";
 import {TILE_SIZE, WARP_TILES, NPCs, DIALOGUE, QUESTIONS, TRIVIA} from "./systems/constants"
 
 function getBrightColor() {
@@ -128,8 +129,6 @@ export class Game extends Scene {
         this.currentTrivia = null;
         this._chatBubbles = new Map();
         this.figgy = null;
-
-
     }
 
     init(data) {
@@ -174,118 +173,34 @@ export class Game extends Scene {
             playerId: this.playerId
         });
         this.uiScene = this.scene.get('UIScene')
-        this.playerRef = ref(db, `players/${this.playerId}`);
-        this.playersRef = ref(db, 'players');
-        this.inventoryRef = ref(db, `inventories/${this.playerId}`);
-        this.skillsRef = ref(db, `skills/${this.playerId}`);
-        this.gatheringRef = ref(db, 'gathering')
-
-        this.triviaRef = ref(db, TRIVIA.dbPath);
-        this.unsubscribeTrivia = onValue(this.triviaRef, (snap) => {
-            this.currentTrivia = snap.val() || null;
-        });
-
-        this.unsubscribeInventory = onValue(this.inventoryRef, (snap) => {
-            const data = snap.val();
-            if (Array.isArray(data) && data.length === 28) {
-                this.inventory = data;
-                this.uiScene?.refreshInventory(this.inventory);
-            } else {
-                set(this.inventoryRef, this.inventory); 
-            }
-        });
-
-        set(this.playerRef, {
-            x: this.player.x,
-            y: this.player.y,
-            color: this.player_color,
-            direction : this.direction_facing,
-            screen: this.player_screen
-        });
-
-        onDisconnect(this.playerRef).remove();
-
-        this.unsubscribeAdded = onChildAdded(this.playersRef, (snapshot) => {
-            const id = snapshot.key;
-            if (!id || id === this.playerId) return;
-
-            const data = snapshot.val();
-            if (!data) return;
-
-            this.syncOtherPlayer(id, data);
-        });
-
-        this.unsubscribeChanged = onChildChanged(this.playersRef, (snapshot) => {
-            const id = snapshot.key;
-            if (!id || id === this.playerId) return;
-
-            const data = snapshot.val();
-            if (!data) return;
-
-            this.syncOtherPlayer(id, data);
-        });
-
-        this.unsubscribeRemoved = onChildRemoved(this.playersRef, (snapshot) => {
-            const id = snapshot.key;
-            if (!id) return;
-
-            this.otherPlayerData.delete(id);
-            this.removeOtherSprite(id);
-        });
-
-        this.unsubscribeGathering = onChildChanged(this.gatheringRef, (snapshot) => {
-            if (this.player_screen != 'field') return;
-            const data = snapshot.val();
-
-            Object.keys(data).forEach((key) => {
-                let item = data[key];
-                if (item.respawnAt > Date.now()){
-                    this.setGatheringTile(item.pos.x, item.pos.y, 15);
-
-                    if (item.respawnAt - Date.now() < 100){
-                        this.setGatheringTile(item.pos.x, item.pos.y, item.tileType);
-                        this.gatheringBusy.delete(key)
-                    }else{
-                        this.time.delayedCall(item.respawnAt - Date.now(), () => {
-                            this.setGatheringTile(item.pos.x, item.pos.y, item.tileType);
-                            this.gatheringBusy.delete(key)
-                        });
-                    }
-                }
-            })
-        })
-
-
-        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-            if (this.unsubscribeAdded) this.unsubscribeAdded();
-            if (this.unsubscribeChanged) this.unsubscribeChanged();
-            if (this.unsubscribeRemoved) this.unsubscribeRemoved();
-            if (this.unsubscribeSkills) this.unsubscribeSkills();
-            if (this.unsubscribeInventory) this.unsubscribeInventory();
-            if (this.unsubscribeGathering) this.unsubscribeGathering();
-            if (this.unsubscribeTrivia) this.unsubscribeTrivia();
-
-            if (this.playerRef) remove(this.playerRef);
-
-            for (const [, rect] of this.otherPlayers) rect.destroy();
-            this.otherPlayers.clear();
-        });
+        
+        this.setup_networking();
 
         this.input.on('pointerup', (pointer) => {
             if (this.ignoreNextGroundClick) {
                 this.ignoreNextGroundClick = false;
                 return;
             }
-            const gatherTile = this.gatheringLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
 
-            if (gatherTile && gatherTile.index !== 15) {
-                this.harvestGatheringTile(gatherTile.x, gatherTile.y, gatherTile.index);
+            this.uiScene.hideRightClickMenu();
+            const gatherTile = this.gatheringLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
+            const tile = this.layer.getTileAtWorldXY(pointer.worldX, pointer.worldY);
+            const isGathering = gatherTile && gatherTile.index !== 15 
+
+            if (pointer.button == 2){
+                let options = [["Move Here", () => this.moveToTileSimple(tile.x, tile.y, tile.index >= 352 && tile.index <= 355)]]
+
+                if (gatherTile && gatherTile.index !== 15) {
+                    options.push([`${this.gatheringLanguage[this.gatheringItems[gatherTile.index]]} ${this.gatheringItems[gatherTile.index]}`, () => this.harvestGatheringTile(gatherTile.x, gatherTile.y, gatherTile.index)])
+                }
+
+                this.uiScene.showRightClickMenu(pointer, options);
                 return;
             }
 
-            const tile = this.layer.getTileAtWorldXY(pointer.worldX, pointer.worldY);
-
-            if (tile){
+            if (isGathering) {
+                this.harvestGatheringTile(gatherTile.x, gatherTile.y, gatherTile.index);
+            }else if (tile){
                 this.moveToTileSimple(tile.x, tile.y, tile.index >= 352 && tile.index <= 355)
             }
         })
@@ -293,21 +208,6 @@ export class Game extends Scene {
         this.input.on('pointermove', (pointer) => {
             this.updateGatherHover(pointer);
         })
-
-        this.unsubscribeSkills = onValue(this.skillsRef, (snap) => {
-            const data = snap.val();
-            if (data && typeof data === 'object') {
-                this.skills = {
-                    huntingXp: Number(data.huntingXp ?? 0),
-                    religionXp: Number(data.religionXp ?? 0),
-                    harvestingXp: Number(data.harvestingXp ?? 0),
-                    cookingXp: Number(data.cookingXp ?? 0)
-                };
-                this.uiScene?.refreshSkills(this.skills);
-            } else {
-                set(this.skillsRef, this.skills);
-            }
-        });
 
         EventBus.emit('current-scene-ready', this);
     }
@@ -923,5 +823,6 @@ function bindSceneSystems(systemModule) {
 Object.assign(
     Game.prototype,
     bindSceneSystems(backgroundSystems),
-    bindSceneSystems(movementSystem)
+    bindSceneSystems(movementSystem),
+    bindSceneSystems(networkingSystem)
 );

@@ -64,6 +64,7 @@ export class UIScene extends Phaser.Scene {
         this.myChatRef = ref(db, `chat/${this.player_chat_key}`);
         this.chatRef = ref(db, 'chat');
         this.triviaRef = ref(db, 'trivia/current');
+        this.gameScene = this.scene.get('Game');
 
         set(this.myChatRef, `${this.player_name} has joined the game`);
 
@@ -243,6 +244,47 @@ export class UIScene extends Phaser.Scene {
             }
             this.showChatBubble(key, data);
         });
+
+
+        this.rightClickMenuText = [];
+    }
+
+    showRightClickMenu(pointer, options){
+        this.gatheringText.setVisible(false); // Disable gathering hover text if right clicked
+
+        options.forEach((option, index) => {
+            let text = this.add.text(pointer.x - 50, pointer.y + index * 36 - 15, option[0], {
+                fontFamily: 'monospace',
+                fontSize: '20px',
+                color: '#e8dec8',
+                backgroundColor: '#261e16d8',
+                padding: { x: 12, y: 8 },
+            });
+
+            text.setInteractive({ useHandCursor: true });
+            text.on('pointerover', () => {
+                text.setBackgroundColor("#251b04d8");
+            })
+            text.on('pointerout', () => {
+                text.setBackgroundColor("#261e16d8");
+            })
+            text.on('pointerdown', () => {
+                this.gameScene.ignoreNextGroundClick = true;
+                option[1]?.();
+
+                this.hideRightClickMenu();
+            })
+
+            this.rightClickMenuText.push(text);
+        })
+
+        const maxWidth = Math.max(...this.rightClickMenuText.map(item => item.width));
+        this.rightClickMenuText.forEach((text) => text.setFixedSize(maxWidth, 0))
+    }
+
+    hideRightClickMenu(){
+        this.rightClickMenuText.forEach((text) => text.destroy());
+        this.rightClickMenuText = [];
     }
 
 
@@ -501,7 +543,9 @@ export class UIScene extends Phaser.Scene {
         this.dialogueText.setVisible(isVisible);
     }
 
-    update() { }
+    update() {
+
+     }
 
     add_tab_button_visual_flair(button) {
         button.on('pointerover', () => {

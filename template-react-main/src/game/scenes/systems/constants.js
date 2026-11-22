@@ -162,3 +162,11 @@ export const TRIVIA = {
     questionsCount: 3,     
     dbPath: 'trivia/current'
 }
+
+export const TILE_TO_NAME = {
+    17: "Marigold",
+    18: "Borage",
+    19: "Tansy",
+    20: "Garlic",
+    21: "Snakeroot"
+}

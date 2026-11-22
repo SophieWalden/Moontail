@@ -5,6 +5,11 @@ import { PhaserGame } from './PhaserGame';
 
 function App ()
 {
+
+    document.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+    });
+
     return (
         <div id="app">
             <PhaserGame />
