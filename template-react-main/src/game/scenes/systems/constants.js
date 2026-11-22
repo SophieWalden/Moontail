@@ -117,7 +117,7 @@ const questions = {
     },
     "Cow Online World": {
         "What is Gelidity's nickname?": "blood dog",
-        "When did the coveted Nintendo Woo release?": "November 19, 2006",
+        "When did the coveted Nintedo Woo release?": "November 19, 2006",
         "What book do you get for combat as a rare drop from the elevator": "animal fun facts volume 1",
         "What animal spouts trivia in Fruity Freaks?": "tenrec",
         "What minimum wage employee has knives always available in his moving area": "bus dog",
@@ -142,21 +142,6 @@ const questions = {
         "What is the term for winning a set with a score of 6-0": "a bagel",
         "Why are Wimbledon tennis balls kept in refrigerated containers?": "to ensure they maintain a consistent bounce",
         "how does a player win a standard tie-break game": "reach seven points and lead by two"   
-    },
-    "Riddles": {
-        "What has keys but no locks": "keyboard",
-        "What has a face and two hands but no arms or legs": "clock",
-        "What has to be broken before you can use it": "egg",
-        "What runs but never walks": "water",
-        "What has a neck but no head": "bottle",
-        "What has an eye but cannot see": "needle",
-        "What goes up but never comes down": "age",
-        "What has many teeth but cannot bite": "comb",
-        "What can travel around the world while staying in a corner": "stamp",
-        "What has legs but doesnt walk": "table",
-        "What is full of holes but still holds water": "sponge",
-        "What gets bigger the more you take away": "hole",
-        "What can you catch but not throw": "cold"
     },
     "One Piece": {
         "What is the name of the fruit, fed to a gun, that transforms one into a dog": "mutt mutt fruit",

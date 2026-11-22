@@ -69,7 +69,7 @@ export class Game extends Scene {
         this.unsubscribeRemoved = null;
         this.direction_facing = "east";
         this.player_color = "geji";
-        this.player_screen = "freaks";
+        this.player_screen = "clan";
         this.moveToken = 0;
         this.currentMoveTween = null;
         this.npcs = []
@@ -502,7 +502,7 @@ export class Game extends Scene {
                 seed[`${x}_${y}`] = {
                     pos: { x, y },
                     tileType: this.generate_new_herbs(),
-                    respawnAt: 0
+                    respawnAt: 0 
                 };
 
                 this.setGatheringTile(x, y, seed[`${x}_${y}`].tileType)
@@ -717,6 +717,7 @@ export class Game extends Scene {
 
     harvestGatheringTile(tileX, tileY, tileIndex) {
         const key = `${tileX}_${tileY}`;
+        console.log(this.gatheringBusy.has(key), this.gatheringBusy)
         if (this.gatheringBusy.has(key)) return;
 
         const item = this.gatheringItems[tileIndex];
@@ -766,6 +767,9 @@ export class Game extends Scene {
                 }
                 
             });
+        },
+        () => {
+            this.gatheringBusy.delete(key);
         });
     }
 

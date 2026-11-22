@@ -121,7 +121,7 @@ function setPlayerFacing(scene, dx, dy) {
 }
 
 
-export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete) {
+export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete, onFail) {
     if (!scene.player) return;
 
     scene.moveToken = (scene.moveToken ?? 0) + 1;
@@ -129,6 +129,7 @@ export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete) {
 
     if (scene.currentMoveTween) {
         scene.currentMoveTween.stop();
+        scene.onMoveFail?.();
         scene.currentMoveTween = null;
     }
 
@@ -143,9 +144,12 @@ export function moveToTileSimple(scene, tileX, tileY, isWarpTile, onComplete) {
     if (!path.length) return;
 
     scene.isStepping = true;
+    scene.onMoveFail = onFail;
 
     const stepNext = (index) => {
-        if (myToken !== scene.moveToken) return;
+        if (myToken !== scene.moveToken){
+            return;
+        };
 
         if (index >= path.length) {
             scene.isStepping = false;
