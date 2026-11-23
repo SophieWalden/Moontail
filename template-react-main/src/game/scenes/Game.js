@@ -906,7 +906,7 @@ export class Game extends Scene {
         const slotRef = ref(db, `droppedItems/${key}`)
         await set(slotRef, item);
 
-        this.ignoreNextGroundClick = false; 
+        this.ignoreNextGroundClick = true; 
         this.inventory[itemIndex] = { item: 'empty' }
         onComplete?.();
     }

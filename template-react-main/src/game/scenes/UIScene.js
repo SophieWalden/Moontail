@@ -333,7 +333,7 @@ export class UIScene extends Phaser.Scene {
                 const x = startX + col * (this.inventorySlotSize + this.inventorySlotGapX) + this.inventorySlotSize / 2;
                 const y = startY + row * (this.inventorySlotSize + this.inventorySlotGapY) + this.inventorySlotSize / 2;
                 const hitbox = this.add.rectangle(x, y, this.inventorySlotSize, this.inventorySlotSize, 0x000000, 0.001);
-                hitbox.setInteractive({ useHandCursor: true });
+                hitbox.setInteractive({ useHandCursor: true, draggable: true });
                 const item = this.add.image(x, y, 'rat');
                 item.setDisplaySize(this.inventorySlotSize - 6, this.inventorySlotSize - 6);
                 item.setVisible(false);
@@ -359,6 +359,25 @@ export class UIScene extends Phaser.Scene {
                         this.refreshInventory(this.gameScene.inventory);
                     })]])
                 })
+                hitbox.on('drag', (pointer) => {
+                    item.setPosition(pointer.x, pointer.y);
+                })
+                hitbox.on('dragend', (pointer) => {
+                    item.setPosition(x, y);
+                    let newCol = Math.round((pointer.x - startX - (this.inventorySlotSize / 2)) / (this.inventorySlotSize + this.inventorySlotGapX));
+                    let newRow = Math.round((pointer.y - startY - (this.inventorySlotSize / 2)) / (this.inventorySlotSize + this.inventorySlotGapY));
+
+                    newCol = Math.min(Math.max(newCol, 0), 3);
+                    newRow = Math.min(Math.max(newRow, 0), 5)
+                    
+                    if (!this.inventorySlots[newCol + newRow * 4].hasItem){
+                        this.gameScene.inventory[newCol + newRow * 4].item = this.gameScene.inventory[col + row * 4].item;
+                        this.gameScene.inventory[col + row * 4].item = "empty";
+                        this.inventorySlots[newCol + newRow * 4].item.setTexture(item.texture)
+                        this.refreshInventory(this.gameScene.inventory);
+                        item.setVisible(false);
+                    }
+                })
                 this.inventorySlots.push(slot);
             }
         }
@@ -379,8 +398,10 @@ export class UIScene extends Phaser.Scene {
                 }
                 slot.item.setTexture(data.item);
                 slot.item.setVisible(this.visible_tab === 'inventory');
+                slot.hitbox.setInteractive({ useHandCursor: true, draggable: true });
             } else {
                 slot.item.setVisible(false);
+                slot.hitbox.removeInteractive(true);
             }
         }
     }
@@ -450,7 +471,7 @@ export class UIScene extends Phaser.Scene {
         for (const slot of this.inventorySlots) {
             slot.item.setVisible(isVisible && slot.hasItem);
             slot.hitbox.setVisible(isVisible);
-            slot.hitbox.input.enabled = isVisible;
+            if (slot.hitbox.input) slot.hitbox.input.enabled = isVisible;
         }
         this.inventoryTitle?.setVisible(isVisible);
         if (!isVisible) {
