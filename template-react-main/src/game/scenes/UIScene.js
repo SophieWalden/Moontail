@@ -35,7 +35,7 @@ export class UIScene extends Phaser.Scene {
 
         this.inventorySlots = [];
         this.inventoryCols = 4;
-        this.inventoryRows = 7;
+        this.inventoryRows = 6;
         this.inventorySlotSize = 48;
         this.inventorySlotGapX = 36;
         this.inventorySlotGapY = 12;
@@ -212,8 +212,8 @@ export class UIScene extends Phaser.Scene {
 
         EventBus.on('inventory-update', this.refreshInventory, this);
 
-        this.gatheringText = this.add.text(1300, 10, '', { fontFamily: 'monospace', fontSize: '18px', color: '#ffffff', backgroundColor: 'rgba(0, 0, 0, 0.7)', padding: { x: 8, y: 6 } });
-        this.gatheringText.setVisible(false);
+        this.hoverText = this.add.text(1300, 10, '', { fontFamily: 'monospace', fontSize: '18px', color: '#ffffff', backgroundColor: 'rgba(0, 0, 0, 0.7)', padding: { x: 8, y: 6 } });
+        this.hoverText.setVisible(false);
 
         this.inventoryTooltip = this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '18px', color: '#ffffff', backgroundColor: 'rgba(0, 0, 0, 0.8)', padding: { x: 8, y: 6 } })
             .setVisible(false).setDepth(1000).setScrollFactor(0);
@@ -250,7 +250,7 @@ export class UIScene extends Phaser.Scene {
     }
 
     showRightClickMenu(pointer, options){
-        this.gatheringText.setVisible(false); // Disable gathering hover text if right clicked
+        this.hoverText.setVisible(false); // Disable gathering hover text if right clicked
 
         options.forEach((option, index) => {
             let text = this.add.text(pointer.x - 50, pointer.y + index * 36 - 15, option[0], {
@@ -351,6 +351,14 @@ export class UIScene extends Phaser.Scene {
                         this.inventoryTooltip?.setVisible(false);
                     }
                 });
+                hitbox.on('pointerdown', (pointer) => {
+                    let invSlot = row * this.inventoryCols + col;
+                    if (pointer.button != 2 || !this.inventorySlots[invSlot].hasItem) return;
+
+                    this.showRightClickMenu(pointer, [["Drop Item", () => this.gameScene.dropItem(invSlot, () => {
+                        this.refreshInventory(this.gameScene.inventory);
+                    })]])
+                })
                 this.inventorySlots.push(slot);
             }
         }
@@ -612,7 +620,7 @@ export class UIScene extends Phaser.Scene {
                 this._triviaHintIndices.add(idx);
             }
             
-            return chars.map((c, i) => this._triviaHintIndices.has(i) ? c : '_').join('');
+            return chars.map((c, i) => this._triviaHintIndices.has(i) || c == ' ' ? c : '_').join('');
         };
 
         const pickRandomCategory = () => {

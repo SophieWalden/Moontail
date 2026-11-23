@@ -18,7 +18,7 @@ import {
 import * as backgroundSystems from "./systems/background"
 import * as movementSystem from "./systems/movement"
 import * as networkingSystem from "./systems/networking";
-import {TILE_SIZE, WARP_TILES, NPCs, DIALOGUE, QUESTIONS, TRIVIA} from "./systems/constants"
+import {TILE_SIZE, WARP_TILES, NPCs, DIALOGUE, QUESTIONS, TRIVIA, NAME_TO_TILE} from "./systems/constants"
 
 function getBrightColor() {
     const r = Phaser.Math.Between(120, 255);
@@ -78,6 +78,7 @@ export class Game extends Scene {
         this.gatheringRespawnMs = 5000;
         this.gatheringHarvestMs = 500;
         this.gatheringBusy = new Set();
+        this.droppedItemBusy = new Set();
         this.hoveredGatheringKey = null;
         this.gatherTooltipText = null;
 
@@ -129,6 +130,7 @@ export class Game extends Scene {
         this.currentTrivia = null;
         this._chatBubbles = new Map();
         this.figgy = null;
+        this.droppedItems = {};
     }
 
     init(data) {
@@ -186,6 +188,8 @@ export class Game extends Scene {
             const gatherTile = this.gatheringLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
             const tile = this.layer.getTileAtWorldXY(pointer.worldX, pointer.worldY);
             const isGathering = gatherTile && gatherTile.index !== 15 
+            const itemTile = this.itemLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
+            const itemDropped = itemTile ? this.droppedItems[`${this.player_screen}_${itemTile.x}_${itemTile.y}`] : null;
 
             if (pointer.button == 2){
                 let options = [["Move Here", () => this.moveToTileSimple(tile.x, tile.y, tile.index >= 352 && tile.index <= 355)]]
@@ -194,19 +198,25 @@ export class Game extends Scene {
                     options.push([`${this.gatheringLanguage[this.gatheringItems[gatherTile.index]]} ${this.gatheringItems[gatherTile.index]}`, () => this.harvestGatheringTile(gatherTile.x, gatherTile.y, gatherTile.index)])
                 }
 
+                if (itemTile && itemDropped){
+                    options.push([`Pickup ${itemDropped.item}`, () => this.pickupItem(itemTile.x, itemTile.y, itemDropped.item)])
+                }
+
                 this.uiScene.showRightClickMenu(pointer, options);
                 return;
             }
 
             if (isGathering) {
                 this.harvestGatheringTile(gatherTile.x, gatherTile.y, gatherTile.index);
-            }else if (tile){
+            } else if (itemTile && itemDropped){
+                this.pickupItem(itemTile.x, itemTile.y, itemDropped.item)
+            } else if (tile){
                 this.moveToTileSimple(tile.x, tile.y, tile.index >= 352 && tile.index <= 355)
             }
         })
 
         this.input.on('pointermove', (pointer) => {
-            this.updateGatherHover(pointer);
+            this.updateHoverText(pointer);
         })
 
         EventBus.emit('current-scene-ready', this);
@@ -376,6 +386,7 @@ export class Game extends Scene {
 
         this.setup_npcs(this.player_screen)
         this.setupGathering(nextScreen);
+        this.setupItems(nextScreen)
     }
 
     generate_new_herbs(){
@@ -423,6 +434,24 @@ export class Game extends Scene {
                     });
                 }
                 
+            })
+        }
+    }
+
+    async setupItems(screen){
+        const itemRef = ref(db, "droppedItems");
+        const snap = await get(itemRef);
+
+        if (snap.exists()){
+            let data = snap.val();
+            
+            Object.keys(data).forEach((key) => {
+                const item = data[key];
+                if (item.screen == screen){
+                    this.setDroppedItem(item.position.x, item.position.y, NAME_TO_TILE[item.item])
+
+                    this.droppedItems[key] = item;
+                } 
             })
         }
     }
@@ -582,6 +611,20 @@ export class Game extends Scene {
         this.gatheringLayer.putTileAt(tileIndex, x, y);
     }
 
+    setDroppedItem(x, y, itemIndex){
+        if (!this.itemLayer) return;
+
+        const width = this.itemLayer.layer.width;
+        const height = this.itemLayer.layer.height;
+
+        if (x < 0 || x >= width || y < 0 || y >= height) {
+            console.warn('[Item] Out of bounds:', x, y);
+            return;
+        }
+
+        this.itemLayer.putTileAt(itemIndex, x, y);
+    }
+
     getPlayerTilePos() {
         const layer = this.layer; 
         return {
@@ -617,7 +660,6 @@ export class Game extends Scene {
 
     harvestGatheringTile(tileX, tileY, tileIndex) {
         const key = `${tileX}_${tileY}`;
-        console.log(this.gatheringBusy.has(key), this.gatheringBusy)
         if (this.gatheringBusy.has(key)) return;
 
         const item = this.gatheringItems[tileIndex];
@@ -673,24 +715,63 @@ export class Game extends Scene {
         });
     }
 
-    updateGatherHover(pointer){
+    pickupItem(x, y, item){
+        const key = `${this.player_screen}_${x}_${y}`;
+        if (this.droppedItemBusy.has(key)) return;
+        if (!item) return;
+
+        const screen = this.player_screen;
+        const approach = this.getGatherApproachTile(x, y);
+        const droppedItemRef = ref(db, `droppedItems/${key}`)
+
+        this.droppedItemBusy.add(key);
+
+        this.moveToTileSimple(approach.x, approach.y, false, () => {
+            const added = this.addItemToInventory(item);
+        
+            this.setDroppedItem(x, y, 15);
+            this.droppedItemBusy.delete(key);
+            delete this.droppedItems[key];
+            remove(droppedItemRef);
+        },
+        () => {
+            this.droppedItemBusy.delete(key);
+        });
+    }
+
+    updateHoverText(pointer){
         const tile = this.gatheringLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
         const item = tile ? this.gatheringItems[tile.index] : null
 
-        if (!tile || tile.index === 15 || !item){
-            if (this.hoveredGatheringKey !== null){
-                this.hoveredGatheringKey = null;
-                this.input.setDefaultCursor('default');
-                this.uiScene.gatheringText?.setVisible(false);
-            }
+        if (tile != null && tile.index !== 15 && item != null){
+            this.hoveredGatheringKey = `${tile.x}_${tile.y}`;
+            this.input.setDefaultCursor('pointer');
+            this.uiScene.hoverText?.setText(`${this.gatheringLanguage[item]} ${item}`);
+            this.uiScene.hoverText?.setVisible(true);
+            this.uiScene.hoverText.setPosition(pointer.x + 16, pointer.y - 12)
             return;
         }
 
-        this.hoveredGatheringKey = `${tile.x}_${tile.y}`;
-        this.input.setDefaultCursor('pointer');
-        this.uiScene.gatheringText?.setText(`${this.gatheringLanguage[item]} ${item}`);
-        this.uiScene.gatheringText?.setVisible(true);
-        this.uiScene.gatheringText.setPosition(pointer.x + 16, pointer.y - 12)
+        const itemTile = this.itemLayer?.getTileAtWorldXY(pointer.worldX, pointer.worldY);
+        if (itemTile){
+            const key = `${this.player_screen}_${itemTile.x}_${itemTile.y}`;
+            const droppedItem = this.droppedItems[key];
+
+            if (droppedItem != null){
+                this.hoveredGatheringKey = `${tile.x}_${tile.y}`;
+                this.input.setDefaultCursor('pointer');
+                this.uiScene.hoverText?.setText(`Pickup ${droppedItem.item}`);
+                this.uiScene.hoverText?.setVisible(true);
+                this.uiScene.hoverText.setPosition(pointer.x + 16, pointer.y - 12)
+                return;
+            }
+        }
+        
+        if (this.hoveredGatheringKey !== null){
+            this.hoveredGatheringKey = null;
+            this.input.setDefaultCursor('default');
+            this.uiScene.hoverText?.setVisible(false);
+        }
     }
 
 
@@ -804,6 +885,30 @@ export class Game extends Scene {
         } catch (err) {
             console.error('showSpeech failed', err);
         }
+    }
+
+    async dropItem(itemIndex, onComplete){
+        const dropItemRef = ref(db, `droppedItems`);
+        const snap = await get(dropItemRef);
+        let items = snap.exists() ? snap.val() : {}
+        let item = this.inventory[itemIndex];
+        let pos = this.itemLayer.getTileAtWorldXY(this.player.x, this.player.y);
+        let screen = this.player_screen;
+        let key = `${screen}_${pos.x}_${pos.y}`;
+
+        if (Object.keys(items).includes(key)){
+            this.uiScene.addChatBubble("server", "can't drop there! There is an item already on the ground");
+            return;
+        }
+        
+        item.screen = screen;
+        item.position = {x: pos.x, y: pos.y}
+        const slotRef = ref(db, `droppedItems/${key}`)
+        await set(slotRef, item);
+
+        this.ignoreNextGroundClick = false; 
+        this.inventory[itemIndex] = { item: 'empty' }
+        onComplete?.();
     }
 
     update() {

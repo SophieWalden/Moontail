@@ -44,6 +44,7 @@ export function create_background(scene, screen) {
     scene.decorations.setDepth(-1);
     
     createGatheringBoard(scene, screen);
+    createItemBoard(scene);
 }
 
 function destroyOldBackground(scene) {
@@ -110,4 +111,26 @@ function createGatheringBoard(scene, screen) {
     scene.gatheringLayer = scene.gatheringMap.createLayer(0, scene.gatheringTiles, 0, 0);
     scene.gatheringLayer.setScale(3);
     scene.gatheringLayer.setDepth(-0.5);
+}
+
+function createItemBoard(scene){
+    const height = scene.board?.length ?? 0;
+    const width = height > 0 ? scene.board[0].length : 0;
+    if (width === 0 || height === 0) return;
+
+    scene.itemBoard = Array.from({ length: height }, () =>
+        Array(width).fill(15)
+    );
+
+    scene.itemMap = scene.make.tilemap({
+        data: scene.itemBoard,
+        tileWidth: 16,
+        tileHeight: 16
+    });
+
+    scene.itemTiles = scene.itemMap.addTilesetImage('bg_tiles', 'bg_tiles', 16, 16, 0, 0);
+
+    scene.itemLayer = scene.itemMap.createLayer(0, scene.itemTiles, 0, 0)
+    scene.itemLayer.setScale(3);
+    scene.itemLayer.setDepth(-0.25)
 }

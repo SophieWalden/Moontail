@@ -12,7 +12,7 @@ import {
     runTransaction
 } from 'firebase/database';
 import { db } from '../../firebase';
-import {TRIVIA} from "./constants"
+import {TRIVIA, NAME_TO_TILE} from "./constants"
 import * as Phaser from 'phaser';
 
 export function setup_networking(scene){
@@ -21,6 +21,7 @@ export function setup_networking(scene){
     scene.inventoryRef = ref(db, `inventories/${scene.playerId}`);
     scene.skillsRef = ref(db, `skills/${scene.playerId}`);
     scene.gatheringRef = ref(db, 'gathering')
+    scene.droppedItemsRef = ref(db, 'droppedItems');
 
     scene.triviaRef = ref(db, TRIVIA.dbPath);
     scene.unsubscribeTrivia = onValue(scene.triviaRef, (snap) => {
@@ -97,6 +98,26 @@ export function setup_networking(scene){
         })
     })
 
+    scene.unsubscribeDroppedItemsAdded = onChildAdded(scene.droppedItemsRef, (snapshot) => {
+        const id = snapshot.key;
+        if (!id) return;
+
+        const data = snapshot.val();
+        if (scene.player_screen != data.screen) return;
+        scene.setDroppedItem(data.position.x, data.position.y, NAME_TO_TILE[data.item])
+        scene.droppedItems[`${scene.player_screen}_${data.position.x}_${data.position.y}`] = data;
+    })
+
+    scene.unsubscribeDroppedItemsRemoved = onChildRemoved(scene.droppedItemsRef, (snapshot) => {
+        const id = snapshot.key;
+        if (!id) return;
+
+        const data = snapshot.val();
+        if (scene.player_screen != data.screen) return;
+        scene.setDroppedItem(data.position.x, data.position.y, 15);
+        delete scene.droppedItems[`${scene.player_screen}_${data.position.x}_${data.position.y}`];
+    })
+
 
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
         if (scene.unsubscribeAdded) scene.unsubscribeAdded();
@@ -106,6 +127,8 @@ export function setup_networking(scene){
         if (scene.unsubscribeInventory) scene.unsubscribeInventory();
         if (scene.unsubscribeGathering) scene.unsubscribeGathering();
         if (scene.unsubscribeTrivia) scene.unsubscribeTrivia();
+        if (scene.unsubscribeDroppedItemsAdded) scene.unsubscribeDroppedItemsAdded();
+        if (scene.unsubscribeDroppedItemsRemoved) scene.unsubscribeDroppedItemsRemoved();
 
         if (scene.playerRef) remove(scene.playerRef);
 

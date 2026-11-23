@@ -168,5 +168,17 @@ export const TILE_TO_NAME = {
     18: "Borage",
     19: "Tansy",
     20: "Garlic",
-    21: "Snakeroot"
+    21: "Snakeroot",
+    386: "rat",
+    387: "snake"
+}
+
+export const NAME_TO_TILE = {
+    "marigold": 17,
+    "borage": 18,
+    "tansy": 19,
+    "garlic": 20,
+    "snakeroot": 21,
+    'rat': 386,
+    "snake": 387
 }
